@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>엑셀 로직 생성기 (무작위 그룹 매칭)</title>
+    <title>엑셀 로직 생성기 (무작위 그룹 매칭 - 0개 허용 수정판)</title>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -80,16 +80,16 @@ ZKUSDT_merged.csv
             <div class="input-grid">
                 <div class="input-group">
                     <label for="count-l" style="color:#e74c3c;">L (Long) 개수</label>
-                    <input type="number" id="count-l" value="3" min="1">
+                    <input type="number" id="count-l" value="3" min="0">
                 </div>
                 <div class="input-group">
                     <label for="count-s" style="color:#2980b9;">S (Short) 개수</label>
-                    <input type="number" id="count-s" value="5" min="1">
+                    <input type="number" id="count-s" value="5" min="0">
                 </div>
             </div>
             <p style="font-size: 0.85em; color: #666; margin: 0;">
                 * 전체 코인 리스트를 무작위로 섞은 뒤, 설정한 개수만큼 잘라서 그룹을 만듭니다.<br>
-                * 한 그룹에 사용된 코인은 다른 그룹에 재사용되지 않습니다.
+                * 0을 입력하면 해당 포지션은 생성되지 않습니다. (둘 다 0일 수는 없습니다)
             </p>
         </div>
 
@@ -179,21 +179,16 @@ ZKUSDT_merged.csv
     async function processData() {
         const rawText = document.getElementById('coin-input').value;
         
-        // 1. 텍스트 파싱 (파일명에서 심볼 추출)
+        // 1. 텍스트 파싱
         const lines = rawText.split('\n');
         processedList = [];
         
-        // 정규식: 앞부분 캡처, 뒤에 USDT_merged.csv 또는 USDT.csv 등이 온다고 가정
-        // 단순히 _merged.csv를 제거하고 마지막 USDT를 제거하는 방식을 사용
         lines.forEach(line => {
             let temp = line.trim();
             if (temp) {
-                // 1. _merged.csv 제거 (대소문자 무시를 위해 정규식 사용 권장되나 단순 replace 사용)
                 temp = temp.replace(/_merged\.csv$/i, '');
                 temp = temp.replace(/\.csv$/i, '');
                 
-                // 2. 뒤에 붙은 USDT 제거
-                // 만약 심볼 자체가 USDT로 끝나는 코인은 거의 없으므로 안전하게 제거
                 if (temp.endsWith('USDT')) {
                     temp = temp.slice(0, -4);
                 }
@@ -209,14 +204,13 @@ ZKUSDT_merged.csv
             return;
         }
 
-        // 중복 제거 (Set 사용)
+        // 중복 제거
         processedList = [...new Set(processedList)];
 
         log(`입력 데이터 처리 시작: 총 ${processedList.length}개 유니크 코인 식별됨`);
         document.getElementById('download-section').style.display = 'none';
 
         try {
-            // 무작위 그룹 로직 실행
             runRandomGrouping(processedList);
 
             document.getElementById('result-summary').innerHTML = 
@@ -232,16 +226,25 @@ ZKUSDT_merged.csv
         }
     }
 
-    // ★ 무작위 그룹 매칭 알고리즘 ★
+    // ★ 무작위 그룹 매칭 알고리즘 (0개 입력 버그 수정됨) ★
     function runRandomGrouping(sourceList) {
-        finalRows = []; // 초기화
+        finalRows = []; 
 
-        const lCount = parseInt(document.getElementById('count-l').value) || 3;
-        const sCount = parseInt(document.getElementById('count-s').value) || 5;
+        const lVal = document.getElementById('count-l').value;
+        const sVal = document.getElementById('count-s').value;
+
+        // 수정됨: 빈 문자열일 때만 기본값 적용. '0' 입력시 0으로 유지.
+        const lCount = lVal === "" ? 3 : parseInt(lVal);
+        const sCount = sVal === "" ? 5 : parseInt(sVal);
+
         const groupSize = lCount + sCount;
 
+        if (groupSize === 0) {
+            throw new Error("L과 S 개수가 모두 0일 수 없습니다.");
+        }
+
         if (sourceList.length < groupSize) {
-            throw new Error(`코인 개수가 부족합니다. (총 ${sourceList.length}개 / 필요 ${groupSize}개)`);
+            throw new Error(`코인 개수가 부족합니다. (총 ${sourceList.length}개 / 필요 그룹당 ${groupSize}개)`);
         }
 
         const valB = document.getElementById('val-b').value;
@@ -259,8 +262,6 @@ ZKUSDT_merged.csv
         for (let i = 0; i < shuffled.length; i += groupSize) {
             const chunk = shuffled.slice(i, i + groupSize);
 
-            // 남은 코인이 그룹 사이즈보다 작으면 버림 (또는 마지막 그룹으로 처리하려면 로직 변경 필요)
-            // 여기서는 '완전한 그룹'만 생성하도록 함
             if (chunk.length < groupSize) {
                 log(`남은 ${chunk.length}개 코인은 그룹 크기(${groupSize}) 부족으로 제외되었습니다.`);
                 break;
@@ -269,15 +270,20 @@ ZKUSDT_merged.csv
             const lGroup = chunk.slice(0, lCount);
             const sGroup = chunk.slice(lCount, groupSize);
 
-            // A열: GroupName 생성 (예: BTC+ ETH+ ... XRP- SOL-)
+            // A열: GroupName 생성 (공백 정리 포함)
             const lNames = lGroup.map(name => `${name}+`).join(' ');
             const sNames = sGroup.map(name => `${name}-`).join(' ');
-            const groupNameCol = `${lNames} ${sNames}`;
+            const groupNameCol = [lNames, sNames].filter(Boolean).join(' ');
 
-            // G열: Symbols 생성 (예: BTCUSDT,L ... \n XRPUSDT,S ...)
+            // G열: Symbols 생성 (빈 줄 방지)
             const lSymbols = lGroup.map(name => `${name}USDT,L`).join('\n');
             const sSymbols = sGroup.map(name => `${name}USDT,S`).join('\n');
-            const symbolsCol = `${lSymbols}\n${sSymbols}`;
+            
+            // L이나 S가 없을 경우를 대비해 배열로 합치기
+            const symbolParts = [];
+            if (lSymbols) symbolParts.push(lSymbols);
+            if (sSymbols) symbolParts.push(sSymbols);
+            const symbolsCol = symbolParts.join('\n');
 
             const row = [
                 groupNameCol, valB, valC, valD, valE, valF, symbolsCol, valH, null
@@ -291,11 +297,10 @@ ZKUSDT_merged.csv
 
     function setColumnWidth(ws) {
         const wscols = [];
-        // A~H열 너비 설정
-        wscols.push({wch: 40}); // A열 (GroupName) 길게
-        for(let i=1; i<6; i++) wscols.push({wch: 10}); // B~F
-        wscols.push({wch: 25}); // G열 (Symbols)
-        wscols.push({wch: 15}); // H열
+        wscols.push({wch: 40}); 
+        for(let i=1; i<6; i++) wscols.push({wch: 10}); 
+        wscols.push({wch: 25}); 
+        wscols.push({wch: 15}); 
         ws['!cols'] = wscols;
     }
 
@@ -332,7 +337,6 @@ ZKUSDT_merged.csv
         let fileIndex = 1;
         const header = ["GroupName", "Start", "Profit", "Loss", "Restart", "Leverage", "Symbols", "DCA", "PRM"];
 
-        // 전체 행을 maxRows 단위로 잘라서 파일 생성
         for (let i = 0; i < finalRows.length; i += maxRows) {
             const chunk = finalRows.slice(i, i + maxRows);
             
