@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>엑셀 로직 생성기 (무작위 그룹 매칭)</title>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; line-height: 1.6; color: #333; }
+        h1, h2, h3 { color: #2c3e50; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        
+        .section { background: #f9f9f9; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #ddd; }
+        
+        /* 텍스트 입력 영역 스타일 */
+        .text-input-area { width: 100%; }
+        .text-input-area textarea { 
+            width: 100%; 
+            height: 300px; 
+            padding: 15px; 
+            box-sizing: border-box; 
+            border: 2px solid #ccc; 
+            border-radius: 5px; 
+            font-family: monospace; 
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        .text-input-area textarea:focus { border-color: #3498db; outline: none; }
+        
+        .input-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .input-group { display: flex; flex-direction: column; }
+        .input-group label { margin-bottom: 5px; font-weight: bold; font-size: 0.9em; }
+        .input-group input, .input-group textarea { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        .input-group textarea.config-area { height: 80px; resize: vertical; }
+
+        .group-setting { background-color: #e3f2fd; border: 1px solid #90caf9; padding: 15px; border-radius: 5px; margin-bottom: 15px; }
+
+        button { background-color: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 16px; transition: background 0.3s; }
+        button:hover { background-color: #2980b9; }
+        button:disabled { background-color: #95a5a6; cursor: not-allowed; }
+        
+        .btn-green { background-color: #27ae60; }
+        .btn-green:hover { background-color: #219150; }
+
+        #logArea { margin-top: 20px; padding: 10px; background: #333; color: #eee; border-radius: 5px; height: 150px; overflow-y: auto; font-family: monospace; font-size: 0.9em; }
+        
+        .download-section { display: none; margin-top: 20px; padding: 20px; background-color: #e8f6f3; border: 1px solid #a2d9ce; border-radius: 8px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>엑셀 로직 생성기 (무작위 그룹 매칭)</h1>
+    <p>입력한 파일명 리스트에서 코인을 추출하여 중복 없이 무작위 그룹을 생성합니다.</p>
+
+    <div class="section">
+        <h2>1. 대상 파일 리스트 입력</h2>
+        <p style="font-size: 0.9em; color: #666; margin-bottom: 10px;">
+            한 줄에 하나씩 파일명을 입력하세요. (예: ZKCUSDT_merged.csv)
+        </p>
+        <div class="text-input-area">
+<textarea id="coin-input" placeholder="ZKCUSDT_merged.csv
+ZKJUSDT_merged.csv
+ZKPUSDT_merged.csv
+ZKUSDT_merged.csv
+..."></textarea>
+        </div>
+        <div style="margin-top: 10px; text-align: right; font-size: 0.9em; color: #555;">
+            <span id="coin-count">0</span>개 파일 감지됨
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>2. 로직 설정값 입력</h2>
+        
+        <div class="group-setting">
+            <h3 style="margin-top: 0; font-size: 1.1em;">그룹 구성 설정</h3>
+            <div class="input-grid">
+                <div class="input-group">
+                    <label for="count-l" style="color:#e74c3c;">L (Long) 개수</label>
+                    <input type="number" id="count-l" value="3" min="1">
+                </div>
+                <div class="input-group">
+                    <label for="count-s" style="color:#2980b9;">S (Short) 개수</label>
+                    <input type="number" id="count-s" value="5" min="1">
+                </div>
+            </div>
+            <p style="font-size: 0.85em; color: #666; margin: 0;">
+                * 전체 코인 리스트를 무작위로 섞은 뒤, 설정한 개수만큼 잘라서 그룹을 만듭니다.<br>
+                * 한 그룹에 사용된 코인은 다른 그룹에 재사용되지 않습니다.
+            </p>
+        </div>
+
+        <div class="input-grid">
+            <div class="input-group">
+                <label for="val-b">B열: Start</label>
+                <input type="text" id="val-b" value="10">
+            </div>
+            <div class="input-group">
+                <label for="val-c">C열: Profit</label>
+                <input type="text" id="val-c" value="11">
+            </div>
+            <div class="input-group">
+                <label for="val-d">D열: Loss</label>
+                <input type="text" id="val-d" value="393.5">
+            </div>
+            <div class="input-group">
+                <label for="val-e">E열: Restart</label>
+                <input type="text" id="val-e" value="-1">
+            </div>
+            <div class="input-group">
+                <label for="val-f">F열: Leverage</label>
+                <input type="text" id="val-f" value="20">
+            </div>
+            <div class="input-group" style="grid-column: span 2;">
+                <label for="val-h">H열: DCA (줄바꿈 가능)</label>
+                <textarea id="val-h" class="config-area">10,15,15
+10,20,30
+10,20,30</textarea>
+            </div>
+        </div>
+        <hr>
+        <div class="input-grid">
+            <div class="input-group">
+                <label for="split-count">파일 분할 최대 개수 (행 단위)</label>
+                <input type="number" id="split-count" value="40" min="1">
+            </div>
+            <div class="input-group">
+                <label for="file-name">다운로드 파일명 접두사</label>
+                <input type="text" id="file-name" value="Result">
+            </div>
+        </div>
+        
+        <div style="margin-top: 20px; text-align: center;">
+            <button onclick="processData()">데이터 처리 및 결과 생성</button>
+        </div>
+    </div>
+
+    <div id="download-section" class="download-section">
+        <h2>3. 결과 다운로드</h2>
+        <p id="result-summary"></p>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <button class="btn-green" onclick="downloadList()">추출된 코인 리스트 다운로드</button>
+            <button onclick="downloadZippedResults()">생성된 로직 파일(ZIP) 다운로드</button>
+        </div>
+    </div>
+
+    <div id="logArea">준비 완료.</div>
+</div>
+
+<script>
+    let processedList = []; 
+    let finalRows = []; // 생성된 모든 행 데이터
+    
+    // 텍스트 입력 시 코인 개수 실시간 카운트
+    document.getElementById('coin-input').addEventListener('input', function(e) {
+        const text = e.target.value;
+        const count = text.split('\n').filter(line => line.trim() !== '').length;
+        document.getElementById('coin-count').textContent = count;
+    });
+
+    function log(msg) {
+        const area = document.getElementById('logArea');
+        area.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+        area.scrollTop = area.scrollHeight;
+    }
+
+    // 배열 셔플 함수 (Fisher-Yates)
+    function shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+    }
+
+    async function processData() {
+        const rawText = document.getElementById('coin-input').value;
+        
+        // 1. 텍스트 파싱 (파일명에서 심볼 추출)
+        const lines = rawText.split('\n');
+        processedList = [];
+        
+        // 정규식: 앞부분 캡처, 뒤에 USDT_merged.csv 또는 USDT.csv 등이 온다고 가정
+        // 단순히 _merged.csv를 제거하고 마지막 USDT를 제거하는 방식을 사용
+        lines.forEach(line => {
+            let temp = line.trim();
+            if (temp) {
+                // 1. _merged.csv 제거 (대소문자 무시를 위해 정규식 사용 권장되나 단순 replace 사용)
+                temp = temp.replace(/_merged\.csv$/i, '');
+                temp = temp.replace(/\.csv$/i, '');
+                
+                // 2. 뒤에 붙은 USDT 제거
+                // 만약 심볼 자체가 USDT로 끝나는 코인은 거의 없으므로 안전하게 제거
+                if (temp.endsWith('USDT')) {
+                    temp = temp.slice(0, -4);
+                }
+                
+                if (temp.length > 0) {
+                    processedList.push(temp.toUpperCase());
+                }
+            }
+        });
+
+        if (processedList.length === 0) {
+            alert("입력된 코인이 없습니다. 텍스트 창에 파일명을 입력해주세요.");
+            return;
+        }
+
+        // 중복 제거 (Set 사용)
+        processedList = [...new Set(processedList)];
+
+        log(`입력 데이터 처리 시작: 총 ${processedList.length}개 유니크 코인 식별됨`);
+        document.getElementById('download-section').style.display = 'none';
+
+        try {
+            // 무작위 그룹 로직 실행
+            runRandomGrouping(processedList);
+
+            document.getElementById('result-summary').innerHTML = 
+                `<strong>생성 결과:</strong> 총 ${finalRows.length}개의 그룹 로직 생성됨.<br>` +
+                `(파일 분할 기준에 따라 ZIP으로 압축됩니다)`;
+            document.getElementById('download-section').style.display = 'block';
+            log("처리 완료! 다운로드 버튼을 이용하세요.");
+
+        } catch (err) {
+            console.error(err);
+            log("에러 발생: " + err.message);
+            alert("처리 중 오류가 발생했습니다.");
+        }
+    }
+
+    // ★ 무작위 그룹 매칭 알고리즘 ★
+    function runRandomGrouping(sourceList) {
+        finalRows = []; // 초기화
+
+        const lCount = parseInt(document.getElementById('count-l').value) || 3;
+        const sCount = parseInt(document.getElementById('count-s').value) || 5;
+        const groupSize = lCount + sCount;
+
+        if (sourceList.length < groupSize) {
+            throw new Error(`코인 개수가 부족합니다. (총 ${sourceList.length}개 / 필요 ${groupSize}개)`);
+        }
+
+        const valB = document.getElementById('val-b').value;
+        const valC = document.getElementById('val-c').value;
+        const valD = document.getElementById('val-d').value;
+        const valE = document.getElementById('val-e').value;
+        const valF = document.getElementById('val-f').value;
+        const valH = document.getElementById('val-h').value;
+
+        // 1. 리스트 셔플
+        const shuffled = shuffleArray([...sourceList]);
+
+        // 2. 그룹핑 및 행 생성
+        let usedCount = 0;
+        for (let i = 0; i < shuffled.length; i += groupSize) {
+            const chunk = shuffled.slice(i, i + groupSize);
+
+            // 남은 코인이 그룹 사이즈보다 작으면 버림 (또는 마지막 그룹으로 처리하려면 로직 변경 필요)
+            // 여기서는 '완전한 그룹'만 생성하도록 함
+            if (chunk.length < groupSize) {
+                log(`남은 ${chunk.length}개 코인은 그룹 크기(${groupSize}) 부족으로 제외되었습니다.`);
+                break;
+            }
+
+            const lGroup = chunk.slice(0, lCount);
+            const sGroup = chunk.slice(lCount, groupSize);
+
+            // A열: GroupName 생성 (예: BTC+ ETH+ ... XRP- SOL-)
+            const lNames = lGroup.map(name => `${name}+`).join(' ');
+            const sNames = sGroup.map(name => `${name}-`).join(' ');
+            const groupNameCol = `${lNames} ${sNames}`;
+
+            // G열: Symbols 생성 (예: BTCUSDT,L ... \n XRPUSDT,S ...)
+            const lSymbols = lGroup.map(name => `${name}USDT,L`).join('\n');
+            const sSymbols = sGroup.map(name => `${name}USDT,S`).join('\n');
+            const symbolsCol = `${lSymbols}\n${sSymbols}`;
+
+            const row = [
+                groupNameCol, valB, valC, valD, valE, valF, symbolsCol, valH, null
+            ];
+            finalRows.push(row);
+            usedCount += groupSize;
+        }
+
+        log(`그룹 생성 완료: 총 ${Math.floor(usedCount / groupSize)}개 그룹 (사용된 코인: ${usedCount}개)`);
+    }
+
+    function setColumnWidth(ws) {
+        const wscols = [];
+        // A~H열 너비 설정
+        wscols.push({wch: 40}); // A열 (GroupName) 길게
+        for(let i=1; i<6; i++) wscols.push({wch: 10}); // B~F
+        wscols.push({wch: 25}); // G열 (Symbols)
+        wscols.push({wch: 15}); // H열
+        ws['!cols'] = wscols;
+    }
+
+    function downloadList() {
+        if (!processedList || processedList.length === 0) {
+            alert("다운로드할 데이터가 없습니다.");
+            return;
+        }
+
+        const wsData = [["Extracted Symbol"]];
+        processedList.forEach(item => {
+            wsData.push([item]);
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        ws['!cols'] = [{wch: 15}];
+        XLSX.utils.book_append_sheet(wb, ws, "CoinList");
+        XLSX.writeFile(wb, `Extracted_Coin_List.xlsx`);
+    }
+
+    function downloadZippedResults() {
+        if (finalRows.length === 0) {
+            alert("생성된 로직 데이터가 없습니다.");
+            return;
+        }
+
+        const maxRows = parseInt(document.getElementById('split-count').value) || 40;
+        const baseName = document.getElementById('file-name').value || "Result";
+        const zip = new JSZip();
+
+        log(`파일 생성 및 압축 시작... (최대 행 수: ${maxRows})`);
+
+        let fileIndex = 1;
+        const header = ["GroupName", "Start", "Profit", "Loss", "Restart", "Leverage", "Symbols", "DCA", "PRM"];
+
+        // 전체 행을 maxRows 단위로 잘라서 파일 생성
+        for (let i = 0; i < finalRows.length; i += maxRows) {
+            const chunk = finalRows.slice(i, i + maxRows);
+            
+            const wsData = [header, ...chunk];
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(wsData);
+            
+            setColumnWidth(ws);
+
+            XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+            const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            zip.file(`${baseName}_${fileIndex}.xlsx`, excelBuffer);
+            fileIndex++;
+        }
+
+        zip.generateAsync({type:"blob"})
+        .then(function(content) {
+            saveAs(content, `${baseName}_Random_Logic_Files.zip`);
+            log("다운로드 완료.");
+        });
+    }
+</script>
+
+</body>
+</html>
