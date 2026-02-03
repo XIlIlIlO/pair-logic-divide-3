@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>엑셀 로직 생성기 (무작위 그룹 매칭 - 0개 허용 수정판)</title>
+    <title>엑셀 로직 생성기 (무작위 그룹 매칭 - 심볼 입력 지원)</title>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -53,22 +53,23 @@
 
 <div class="container">
     <h1>엑셀 로직 생성기 (무작위 그룹 매칭)</h1>
-    <p>입력한 파일명 리스트에서 코인을 추출하여 중복 없이 무작위 그룹을 생성합니다.</p>
+    <p>입력한 리스트(파일명 또는 코인 심볼)를 기반으로 중복 없이 무작위 그룹을 생성합니다.</p>
 
     <div class="section">
-        <h2>1. 대상 파일 리스트 입력</h2>
+        <h2>1. 대상 입력 (파일명 또는 코인명)</h2>
         <p style="font-size: 0.9em; color: #666; margin-bottom: 10px;">
-            한 줄에 하나씩 파일명을 입력하세요. (예: ZKCUSDT_merged.csv)
+            한 줄에 하나씩 입력하세요. (예: bch, uni, ZKCUSDT_merged.csv 혼용 가능)
         </p>
         <div class="text-input-area">
-<textarea id="coin-input" placeholder="ZKCUSDT_merged.csv
-ZKJUSDT_merged.csv
-ZKPUSDT_merged.csv
-ZKUSDT_merged.csv
+<textarea id="coin-input" placeholder="bch
+uni
+xlm
+BTCUSDT
+ZKCUSDT_merged.csv
 ..."></textarea>
         </div>
         <div style="margin-top: 10px; text-align: right; font-size: 0.9em; color: #555;">
-            <span id="coin-count">0</span>개 파일 감지됨
+            <span id="coin-count">0</span>줄 입력됨
         </div>
     </div>
 
@@ -89,7 +90,7 @@ ZKUSDT_merged.csv
             </div>
             <p style="font-size: 0.85em; color: #666; margin: 0;">
                 * 전체 코인 리스트를 무작위로 섞은 뒤, 설정한 개수만큼 잘라서 그룹을 만듭니다.<br>
-                * 0을 입력하면 해당 포지션은 생성되지 않습니다. (둘 다 0일 수는 없습니다)
+                * 0을 입력하면 해당 포지션은 생성되지 않습니다.
             </p>
         </div>
 
@@ -179,28 +180,33 @@ ZKUSDT_merged.csv
     async function processData() {
         const rawText = document.getElementById('coin-input').value;
         
-        // 1. 텍스트 파싱
+        // 1. 텍스트 파싱 (수정된 부분)
         const lines = rawText.split('\n');
         processedList = [];
         
         lines.forEach(line => {
             let temp = line.trim();
-            if (temp) {
-                temp = temp.replace(/_merged\.csv$/i, '');
-                temp = temp.replace(/\.csv$/i, '');
-                
-                if (temp.endsWith('USDT')) {
-                    temp = temp.slice(0, -4);
-                }
-                
-                if (temp.length > 0) {
-                    processedList.push(temp.toUpperCase());
-                }
+            if (!temp) return; // 빈 줄 무시
+
+            // 1) 파일 확장자 및 _merged 접미사 제거
+            temp = temp.replace(/_merged\.csv$/i, '');
+            temp = temp.replace(/\.csv$/i, '');
+            
+            // 2) 대문자로 변환
+            temp = temp.toUpperCase();
+
+            // 3) 'USDT'로 끝난다면 제거 (단, 심볼이 4글자보다 길 때만. 예: 'USDT' 자체는 제외)
+            if (temp.endsWith('USDT') && temp.length > 4) {
+                temp = temp.slice(0, -4);
+            }
+            
+            if (temp.length > 0) {
+                processedList.push(temp);
             }
         });
 
         if (processedList.length === 0) {
-            alert("입력된 코인이 없습니다. 텍스트 창에 파일명을 입력해주세요.");
+            alert("입력된 코인이 없습니다.");
             return;
         }
 
@@ -226,14 +232,14 @@ ZKUSDT_merged.csv
         }
     }
 
-    // ★ 무작위 그룹 매칭 알고리즘 (0개 입력 버그 수정됨) ★
+    // ★ 무작위 그룹 매칭 알고리즘 ★
     function runRandomGrouping(sourceList) {
         finalRows = []; 
 
         const lVal = document.getElementById('count-l').value;
         const sVal = document.getElementById('count-s').value;
 
-        // 수정됨: 빈 문자열일 때만 기본값 적용. '0' 입력시 0으로 유지.
+        // 빈 문자열일 때만 기본값 적용. '0' 입력시 0으로 유지.
         const lCount = lVal === "" ? 3 : parseInt(lVal);
         const sCount = sVal === "" ? 5 : parseInt(sVal);
 
@@ -275,11 +281,10 @@ ZKUSDT_merged.csv
             const sNames = sGroup.map(name => `${name}-`).join(' ');
             const groupNameCol = [lNames, sNames].filter(Boolean).join(' ');
 
-            // G열: Symbols 생성 (빈 줄 방지)
+            // G열: Symbols 생성
             const lSymbols = lGroup.map(name => `${name}USDT,L`).join('\n');
             const sSymbols = sGroup.map(name => `${name}USDT,S`).join('\n');
             
-            // L이나 S가 없을 경우를 대비해 배열로 합치기
             const symbolParts = [];
             if (lSymbols) symbolParts.push(lSymbols);
             if (sSymbols) symbolParts.push(sSymbols);
