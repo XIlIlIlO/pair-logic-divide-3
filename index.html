@@ -75,6 +75,20 @@ ZKCUSDT_merged.csv
 
     <div class="section">
         <h2>2. 로직 설정값 입력</h2>
+
+        <div class="group-setting">
+            <h3 style="margin-top: 0; font-size: 1.1em;">그룹 생성 방식</h3>
+            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                    <input type="checkbox" id="mode-random" checked onchange="toggleGroupMode('random')">
+                    무작위로 그룹 생성
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                    <input type="checkbox" id="mode-sequential" onchange="toggleGroupMode('sequential')">
+                    텍스트 맨 위 코인들 순서대로 그룹 생성
+                </label>
+            </div>
+        </div>
         
         <div class="group-setting">
             <h3 style="margin-top: 0; font-size: 1.1em;">그룹 구성 설정</h3>
@@ -89,7 +103,7 @@ ZKCUSDT_merged.csv
                 </div>
             </div>
             <p style="font-size: 0.85em; color: #666; margin: 0;">
-                * 전체 코인 리스트를 무작위로 섞은 뒤, 설정한 개수만큼 잘라서 그룹을 만듭니다.<br>
+                * 선택한 방식에 따라 전체 코인 리스트를 무작위로 섞거나, 입력 순서 그대로 설정한 개수만큼 잘라서 그룹을 만듭니다.<br>
                 * 0을 입력하면 해당 포지션은 생성되지 않습니다.
             </p>
         </div>
@@ -177,6 +191,32 @@ ZKCUSDT_merged.csv
         return array;
     }
 
+    // 체크박스 2개 중 하나만 선택되도록 제어
+    function toggleGroupMode(selectedMode) {
+        const randomCheckbox = document.getElementById('mode-random');
+        const sequentialCheckbox = document.getElementById('mode-sequential');
+
+        if (selectedMode === 'random') {
+            if (randomCheckbox.checked) {
+                sequentialCheckbox.checked = false;
+            } else if (!sequentialCheckbox.checked) {
+                randomCheckbox.checked = true;
+            }
+        }
+
+        if (selectedMode === 'sequential') {
+            if (sequentialCheckbox.checked) {
+                randomCheckbox.checked = false;
+            } else if (!randomCheckbox.checked) {
+                sequentialCheckbox.checked = true;
+            }
+        }
+    }
+
+    function getGroupMode() {
+        return document.getElementById('mode-sequential').checked ? 'sequential' : 'random';
+    }
+
     async function processData() {
         const rawText = document.getElementById('coin-input').value;
         
@@ -232,7 +272,7 @@ ZKCUSDT_merged.csv
         }
     }
 
-    // ★ 무작위 그룹 매칭 알고리즘 ★
+    // ★ 그룹 매칭 알고리즘 ★
     function runRandomGrouping(sourceList) {
         finalRows = []; 
 
@@ -260,13 +300,17 @@ ZKCUSDT_merged.csv
         const valF = document.getElementById('val-f').value;
         const valH = document.getElementById('val-h').value;
 
-        // 1. 리스트 셔플
-        const shuffled = shuffleArray([...sourceList]);
+        const groupMode = getGroupMode();
 
-        // 2. 그룹핑 및 행 생성
+        // 선택한 방식에 따라 리스트 결정
+        const arrangedList = groupMode === 'random' ? shuffleArray([...sourceList]) : [...sourceList];
+
+        log(`그룹 생성 방식: ${groupMode === 'random' ? '무작위 배열' : '입력 순서대로 배열'}`);
+
+        // 그룹핑 및 행 생성
         let usedCount = 0;
-        for (let i = 0; i < shuffled.length; i += groupSize) {
-            const chunk = shuffled.slice(i, i + groupSize);
+        for (let i = 0; i < arrangedList.length; i += groupSize) {
+            const chunk = arrangedList.slice(i, i + groupSize);
 
             if (chunk.length < groupSize) {
                 log(`남은 ${chunk.length}개 코인은 그룹 크기(${groupSize}) 부족으로 제외되었습니다.`);
